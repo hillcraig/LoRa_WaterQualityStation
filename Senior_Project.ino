@@ -18,7 +18,7 @@
 //The following preprocessor statement defines whether or not 
 //The microcontroller should wait (in the loop section) before collecting more data
 //WAIT 1 means waiting and WAIT 0 means the loop will take readings and transmit without pause
-#define WAIT 0
+#define WAIT 1
 
 //------------------------------------------------
 // State Diagram
@@ -82,14 +82,19 @@ void setup() {
     for(Sensor* sensor: sensor_array) {
         sensor->sleep_command();
     }
+
+    //put "all" the isolated carrier boards into low power mode
+    j_handler.set_all_pins_low();
 };
 
 void loop() {
+
     loop_start_time = millis();
 
+    //---COLLECT DATA---
     collectSensorData();  
+
     //---SEND DATA---
-    
     j_handler.send_data(); 
 
     //--- WAIT ---

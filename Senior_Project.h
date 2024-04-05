@@ -38,8 +38,14 @@ const int PHSENSOR_PORT = 1;
 const int TEMPERATURE_PORT = 2;
 const int CONDUCTIVITY_PORT = 3; 
 const int DISSOLVED_OXYGEN_PORT = 6; 
-
 // -----------------------------------------
+
+
+//These are the AUX pins on the notecarrier board
+const int PHSENSOR_PIN = 1;
+const int CONDUCTIVITY_PIN = 3;
+const int DISSOLVED_OXYGEN_PIN = 2;
+//
 
 Notecard notecard;
 QWIICMUX qwiic;  
@@ -105,6 +111,7 @@ class Sensor {
 
         int address = 0; //address refers to the I2C address of the ezoboard =
         int port = 0; //port refers to the physical mux port on the mux board
+        int pin = 0;
         int number_of_samples; //number of samples to take during each reading
 
         float average = 0.0; //average of the N measurements
@@ -201,8 +208,8 @@ class Sensor {
         * example: Ezo_board ph_board = Ezo_board(99, name); this defines a new ezo_board with I2C address 99 and a name 
         */
         //NOTE: dont try and put debug statements in the constructor
-        Sensor(int num_of_samples_param, Ezo_board& ezo_board_param, int mux_port) :
-            ezo_board{ezo_board_param}, port(mux_port), number_of_samples(num_of_samples_param) {
+        Sensor(int num_of_samples_param, Ezo_board& ezo_board_param, int mux_port, int pin_param) :
+            ezo_board{ezo_board_param}, port(mux_port), number_of_samples(num_of_samples_param), pin(pin_param) {
 
             address = ezo_board_param.get_address(); //here the address of the board is set to a class member  
             data = static_cast<float*>(calloc(number_of_samples, sizeof(float))); //here the space for the data is allocated on the heap
@@ -341,6 +348,127 @@ struct J_Handler {
         }
 
     };
+
+    /* 
+    * ====== FIXING A PIN-4 LOW CALL ======
+    * 1. Physically remove notecard from notecarrier board
+    * 2. Flash "safe" software onto the microcontroller (introductory blink code for instance)
+    * 3. Reconnect notecard to the notecarrier
+    * 4. Factory reset the notecard using the usb port on the NOTECARRIER and the notecarrier quick start
+    * 5. Reset the product UID on the notecard
+    * 6. You can now reflash the microcontroller with software and test again
+    * =====================================
+    */
+
+    /*
+    * Sends a request to the notecard to pull pins AUX1 - AUX3 (AUX4 is left as is -- see note)
+    * to LOW (pulls them to ground) which sets the isolated carrier boards to low power mode
+    * 
+    * Note on pin 4: setting the fourth pin to low even in software kills the notecard - while the
+    * notecard is connected no new code can be flashed to the microcontroller - if this happens follow the 
+    * procedure above. There is either a problem in the Notecard firmware or the Notecard API
+    */
+    void set_all_pins_low() {
+        J *req = NoteNewRequest("card.aux");
+        JAddStringToObject(req, "mode", "gpio");
+
+        J *pins = JAddArrayToObject(req, "usage");
+        JAddItemToArray(pins, JCreateString("low"));   // AUX1
+        JAddItemToArray(pins, JCreateString("low"));   // AUX2
+        JAddItemToArray(pins, JCreateString("low"));  // AUX3
+        JAddItemToArray(pins, JCreateString("")); // this unfortunately is correct for the time being
+        //the above statement needs to be fixed in the blues wireless API or firmware
+
+        if (!notecard.sendRequest(req)) {                 //send request for connection
+            #if N_DEBUG
+                console_debug.println("NOTECARD PULL LOW PROBLEM");
+            #endif
+            JDelete(req);
+        } else {
+            #if N_DEBUG
+                console_debug.println("NOTECARD PULL LOW SUCCESS");
+            #endif
+        }
+
+        delay(1000);
+    }
+
+    void set_pin_common(const int pin_location, const char* high_low) {
+        //it is expected that this function will be called in normal operation (the temperature sensor calls
+        //this each time for instance)
+        if(pin_location > 3 || pin_location < 1) {
+            #if N_DEBUG
+                console_debug.println("Trying to access a pin outside of the bounds - yes pin 4 is not allowed");
+            #endif
+            return;
+        }
+
+        req = NoteNewRequest("card.aux");
+        JAddStringToObject(req, "mode", "gpio");
+
+        J *pins = JAddArrayToObject(req, "usage");
+
+        //adds three elements to the array
+        for(int i=1; i<4; ++i) {
+            if(i == pin_location) {
+                JAddItemToArray(pins, JCreateString(high_low));
+            } else {
+                JAddItemToArray(pins, JCreateString(""));
+            }
+        }
+
+        JAddItemToArray(pins, JCreateString("")); //there needs to be a fourth entry in the array - and it can't be low
+    }
+
+
+    /*
+    * Sends a request to the notecard to pull the pin specified by pin_location to low
+    * The pin_location is specified in each individual sensor's class (the constants are defined 
+    * at the top of the file but they are set in the child classes)
+    * 
+    * The separate function has been created for debug statement differences and call clarity (no param added from main)
+    */ 
+    void set_pin_low(const int pin_location) {
+        set_pin_common(pin_location, "low");
+
+        if (!notecard.sendRequest(req)) {                 //send request for connection
+            #if N_DEBUG
+                console_debug.println("NOTECARD PULL LOW - Individual - PROBLEM");
+            #endif
+            JDelete(req);
+        } else {
+            #if N_DEBUG
+                console_debug.println("NOTECARD PULL LOW - Individual - SUCCESS");
+            #endif
+        }
+
+        delay(1000);
+    }
+
+    /*
+    * Sends a request to the notecard to pull the pin specified by pin_location to high
+    * The pin_location is specified in each individual sensor's class (the constants are defined 
+    * at the top of the file but they are set in the child classes)
+    * 
+    * The separate function has been created for debug statement differences and call clarity (no param added from main)
+    * 
+    */ 
+    void set_pin_high(const int pin_location) {
+        set_pin_common(pin_location, "high");
+
+        if (!notecard.sendRequest(req)) {                 //send request for connection
+            #if N_DEBUG
+                console_debug.println("NOTECARD PULL HIGH - Individual - PROBLEM");
+            #endif
+            JDelete(req);
+        } else {
+            #if N_DEBUG
+                console_debug.println("NOTECARD PULL HIGH - Individual - SUCCESS");
+            #endif
+        }
+
+        delay(1000);
+    }
 };
 
 /*
@@ -354,8 +482,8 @@ public:
     const char* name = "dissolved_oxygen";
     Ezo_board dissoved_oxygen_board = Ezo_board(97, name); 
 
-    DissolvedOxygenSensor( int num_of_samples_param = SENSOR_SAMPLES, int port_param = DISSOLVED_OXYGEN_PORT) :
-        Sensor( num_of_samples_param, dissoved_oxygen_board, port_param) {};
+    DissolvedOxygenSensor( int num_of_samples_param = SENSOR_SAMPLES, int port_param = DISSOLVED_OXYGEN_PORT, int pin_param = DISSOLVED_OXYGEN_PIN) :
+        Sensor( num_of_samples_param, dissoved_oxygen_board, port_param, pin_param) {};
 };
 
 /*
@@ -369,8 +497,8 @@ public:
     const char* name = "ph";
     Ezo_board ph_board = Ezo_board(99, name); 
 
-    PHSensor(int num_of_samples_param = SENSOR_SAMPLES, int port_param = PHSENSOR_PORT) : 
-        Sensor( num_of_samples_param, ph_board, port_param) {};  
+    PHSensor(int num_of_samples_param = SENSOR_SAMPLES, int port_param = PHSENSOR_PORT, int pin_param = PHSENSOR_PIN) : 
+        Sensor( num_of_samples_param, ph_board, port_param, pin_param) {};  
 };
 
 /*
@@ -384,8 +512,9 @@ public:
     const char* name = "temperature";
     Ezo_board temp_board = Ezo_board(102, name); 
     // note init super class port call
-    TemperatureSensor(int num_of_samples_param = SENSOR_SAMPLES, int port_param = TEMPERATURE_PORT) :
-        Sensor( num_of_samples_param, temp_board, port_param) {};
+    //currently temperature sensor isolated carrier board is not shut off
+    TemperatureSensor(int num_of_samples_param = SENSOR_SAMPLES, int port_param = TEMPERATURE_PORT, int pin_param = 0) :
+        Sensor( num_of_samples_param, temp_board, port_param, pin_param) {};
 
     //the temperature sensor won't call a temperature dependent reading (cause the temperature is being read)
     //instead the normal read command without a temperature adjustment is used
@@ -416,8 +545,8 @@ public:
 
     const char* name = "conductivity";
     Ezo_board conductivity_board = Ezo_board(100, name); 
-    ConductivitySensor(int num_of_samples_param = SENSOR_SAMPLES, int port_param = CONDUCTIVITY_PORT) : 
-        Sensor(num_of_samples_param, conductivity_board, port_param) {};
+    ConductivitySensor(int num_of_samples_param = SENSOR_SAMPLES, int port_param = CONDUCTIVITY_PORT, int pin_param = CONDUCTIVITY_PIN) : 
+        Sensor(num_of_samples_param, conductivity_board, port_param, pin_param) {};
 };
 
 //object instantiation of the j_handler for handling notecard requests
@@ -425,10 +554,15 @@ J_Handler j_handler;
 
 //reads sensor data from each sensor - is an easy wrapper function
 void collectSensorData() {
-    Sensor_Reading reading; 
+    
+    Sensor_Reading reading;  
     
     for (Sensor* sensor : sensor_array) {
+        j_handler.set_pin_high(sensor->pin);
+
         reading = sensor->take_reading();
+
+        j_handler.set_pin_low(sensor->pin);
 
         #if N_DEBUG
             if(reading == SENSOR_ERROR) {
