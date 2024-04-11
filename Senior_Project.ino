@@ -83,8 +83,9 @@ void setup() {
         sensor->sleep_command();
     }
 
-    //put "all" the isolated carrier boards into low power mode
+    //start all the boards in low power mode
     j_handler.set_all_pins_low();
+
 };
 
 void loop() {

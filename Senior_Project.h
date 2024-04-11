@@ -35,16 +35,16 @@ const int SENSOR_SAMPLES = 10;
 //physically attached to on the MUX
 //these will vary for each sensor station
 const int PHSENSOR_PORT = 1;
-const int TEMPERATURE_PORT = 2;
-const int CONDUCTIVITY_PORT = 3; 
+const int TEMPERATURE_PORT = 4;
+const int CONDUCTIVITY_PORT = 5; 
 const int DISSOLVED_OXYGEN_PORT = 6; 
 // -----------------------------------------
 
 
 //These are the AUX pins on the notecarrier board
 const int PHSENSOR_PIN = 1;
-const int CONDUCTIVITY_PIN = 3;
 const int DISSOLVED_OXYGEN_PIN = 2;
+const int CONDUCTIVITY_PIN = 3;
 //
 
 Notecard notecard;
@@ -239,6 +239,9 @@ struct J_Handler {
     // into its own function if it contains a logical sequence makes sense)
     //------------------------------------------------
 
+    //Note: a function could be made that executes a send to the notecard with log and debug messages to 
+    //avoid code duplication - this change was not made due to the variance in log messages - however it could be done
+
 
     /*
     * This method sets the notecards productUID -- this defines where the traffic should be sent to
@@ -369,7 +372,7 @@ struct J_Handler {
     * procedure above. There is either a problem in the Notecard firmware or the Notecard API
     */
     void set_all_pins_low() {
-        J *req = NoteNewRequest("card.aux");
+        req = NoteNewRequest("card.aux");
         JAddStringToObject(req, "mode", "gpio");
 
         J *pins = JAddArrayToObject(req, "usage");
@@ -393,14 +396,27 @@ struct J_Handler {
         delay(1000);
     }
 
-    void set_pin_common(const int pin_location, const char* high_low) {
+   //The following enumeration is used to distinguish a valid access to a pin 
+   // (pin four is out of bounds but called for ease of funciton iteration) 
+   // an inbounds pin request is a valid request while an out of bounds request is not 
+    enum PIN_REQUEST {
+        IN_BOUNDS,
+        OUT_OF_BOUNDS,
+    };
+
+    /*
+    * The following method verifies that the pin to be set is not out of bounds and then
+    * formats the notecard request appropriately - it ensures the fourth pin is not set (a API bug that 
+    * needs to be fixed)
+    */
+    PIN_REQUEST set_pin_common(const int pin_location, const char* high_low) {
         //it is expected that this function will be called in normal operation (the temperature sensor calls
         //this each time for instance)
         if(pin_location > 3 || pin_location < 1) {
             #if N_DEBUG
                 console_debug.println("Trying to access a pin outside of the bounds - yes pin 4 is not allowed");
             #endif
-            return;
+            return PIN_REQUEST::OUT_OF_BOUNDS;
         }
 
         req = NoteNewRequest("card.aux");
@@ -418,6 +434,8 @@ struct J_Handler {
         }
 
         JAddItemToArray(pins, JCreateString("")); //there needs to be a fourth entry in the array - and it can't be low
+
+        return PIN_REQUEST::IN_BOUNDS;
     }
 
 
@@ -429,20 +447,21 @@ struct J_Handler {
     * The separate function has been created for debug statement differences and call clarity (no param added from main)
     */ 
     void set_pin_low(const int pin_location) {
-        set_pin_common(pin_location, "low");
+        PIN_REQUEST valid = set_pin_common(pin_location, "low");
 
-        if (!notecard.sendRequest(req)) {                 //send request for connection
-            #if N_DEBUG
-                console_debug.println("NOTECARD PULL LOW - Individual - PROBLEM");
-            #endif
-            JDelete(req);
-        } else {
-            #if N_DEBUG
-                console_debug.println("NOTECARD PULL LOW - Individual - SUCCESS");
-            #endif
+        if(valid == PIN_REQUEST::IN_BOUNDS) {
+            if (!notecard.sendRequest(req)) {                 //send request for connection
+                #if N_DEBUG
+                    console_debug.println("NOTECARD PULL LOW - Individual - PROBLEM");
+                #endif
+                JDelete(req);
+            } else {
+                #if N_DEBUG
+                    console_debug.println("NOTECARD PULL LOW - Individual - SUCCESS");
+                #endif
+            }
+            delay(1000);
         }
-
-        delay(1000);
     }
 
     /*
@@ -454,20 +473,21 @@ struct J_Handler {
     * 
     */ 
     void set_pin_high(const int pin_location) {
-        set_pin_common(pin_location, "high");
+        PIN_REQUEST valid = set_pin_common(pin_location, "high");
 
-        if (!notecard.sendRequest(req)) {                 //send request for connection
-            #if N_DEBUG
-                console_debug.println("NOTECARD PULL HIGH - Individual - PROBLEM");
-            #endif
-            JDelete(req);
-        } else {
-            #if N_DEBUG
-                console_debug.println("NOTECARD PULL HIGH - Individual - SUCCESS");
-            #endif
+        if(valid == PIN_REQUEST::IN_BOUNDS){ 
+            if (!notecard.sendRequest(req)) {                 //send request for connection
+                #if N_DEBUG
+                    console_debug.println("NOTECARD PULL HIGH - Individual - PROBLEM");
+                #endif
+                JDelete(req);
+            } else {
+                #if N_DEBUG
+                    console_debug.println("NOTECARD PULL HIGH - Individual - SUCCESS");
+                #endif
+            }
+            delay(1000);
         }
-
-        delay(1000);
     }
 };
 
@@ -558,10 +578,13 @@ void collectSensorData() {
     Sensor_Reading reading;  
     
     for (Sensor* sensor : sensor_array) {
+        //turns on the isolated carrier board first
         j_handler.set_pin_high(sensor->pin);
 
+        //takes reading from the sensor
         reading = sensor->take_reading();
 
+        //turns off the isolated carrier board
         j_handler.set_pin_low(sensor->pin);
 
         #if N_DEBUG
