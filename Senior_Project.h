@@ -9,12 +9,12 @@
 
 #define console_debug Serial
 
-#define N_DEBUG 1
-#define LOOP_WAIT_ACTION 0
+#define N_DEBUG 0 //toggles debug statements
+#define LOOP_WAIT_ACTION 0 //toggles type of waiting in main loop
 
 //The productUID defines the interaction with notehub - this must be added as parameter
 //To hub.set upon notecard initialization (for the first time)
-#define productUID "edu.umn.d.kuhn0192:lorawan"
+#define productUID "edu.umn.d.cshill:lora_2024"
 
 //self explanatory constants
 const int miliseconds_per_second = 1000;

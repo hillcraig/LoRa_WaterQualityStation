@@ -3,7 +3,7 @@
  * @author Miles Kuhn (kuhn0192@d.umn.edu)
  * @brief
  * @version 0.1
- * @date 2024-04-02
+ * @date 2024-04-12
  *
  * @copyright Copyright (c) 2024
  *
@@ -31,7 +31,7 @@
 //------------------------------------------------
 
 //total time for each loop, takes into account times of actions
-const uint32_t total_loop_minutes = 1; //thus each loop takes 30 minutes
+const uint32_t total_loop_minutes = 30; //thus each loop takes 30 minutes
 
 //used to track the total loop time (so it restarts after 30 min)
 unsigned long loop_start_time;
@@ -46,7 +46,10 @@ void setup() {
     // --- Setup Console Debugging, the Notecard and I2C communication
     pinMode(indicator_pin, OUTPUT);
 
-    console_debug.begin(9600); //beign debugging at 9600 baud - check serial output at this frequency
+    #if N_DEBUG
+        console_debug.begin(9600); //beign debugging at 9600 baud - check serial output at this frequency
+    #endif
+
     Wire.begin(); // start I2C communication
     notecard.begin(); //start Notecard
     qwiic.begin(); //start Mux
